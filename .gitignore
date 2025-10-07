@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual env / builds
+.venv/
+env/
+build/
+dist/
+
+# IDE
+.idea/
+
+# Outputs / experiments
+exp/
+outputs/
+checkpoints/
+logs/
+*.mp4
+
+# OS
+.DS_Store
+Thumbs.db
