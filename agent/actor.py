@@ -1,14 +1,18 @@
 import math
 import torch
 import utils
-
-import numpy as np
 from torch import nn
 import torch.nn.functional as F
-
 from torch import distributions as pyd
+"""
+This module defines the actor component, implementing a diagonal Gaussian policy with tanh-squashed outputs 
+to generate bounded continuous actions for training with the Soft Actor-Critic algorithm.
+"""
+
 
 class TanhTransform(pyd.transforms.Transform):
+    # applies a numerically stable tanh transformation to map values from the real domain to the interval (-1, 1).
+
     domain = pyd.constraints.real
     codomain = pyd.constraints.interval(-1.0, 1.0)
     bijective = True
@@ -28,17 +32,15 @@ class TanhTransform(pyd.transforms.Transform):
         return x.tanh()
 
     def _inverse(self, y):
-        # We do not clamp to the boundary here as it may degrade the performance of certain algorithms.
-        # one should use `cache_size=1` instead
-        return self.atanh(y)
+           return self.atanh(y)
 
     def log_abs_det_jacobian(self, x, y):
-        # We use a formula that is more numerically stable, see details in the following link
-        # https://github.com/tensorflow/probability/commit/ef6bb176e0ebd1cf6e25c6b5cecdd2428c22963f#diff-e120f70e92e6741bca649f04fcd907b7
-        return 2. * (math.log(2.) -x - F.softplus(-2. * x))
+           return 2. * (math.log(2.) -x - F.softplus(-2. * x))
 
 
 class SquashedNormal(pyd.transformed_distribution.TransformedDistribution):
+    # defines a Gaussian (Normal) distribution transformed by a tanh function to produce bounded actions between -1 and 1.
+
     def __init__(self, loc, scale):
         self.loc = loc
         self.scale = scale
@@ -54,8 +56,10 @@ class SquashedNormal(pyd.transformed_distribution.TransformedDistribution):
             mu = tr(mu)
         return mu
 
+
 class DiagGaussianActor(nn.Module):
-    """torch.distributions implementation of a diagonal Gaussian policy."""
+    # "Implements a diagonal Gaussian policy network that outputs a squashed Normal action distribution for continuous control tasks.
+
     def __init__(self, obs_dim, action_dim, hidden_dim, hidden_depth, log_std_bounds):
 
         super().__init__()
@@ -66,14 +70,16 @@ class DiagGaussianActor(nn.Module):
         self.apply(utils.weight_init)
 
     def forward(self, obs):
-        mu, log_std = self.trunk(obs).chunk(2, dim=-1)
+        if obs.ndim == 1:
+            obs = obs.unsqueeze(0)
 
-        # constrain_log_std inside [log_std_min, log_std_max]
+        mu, log_std = self.trunk(obs.float()).chunk(2, dim=-1)
+
         log_std = torch.tanh(log_std)
-        log_std_min, log_std_max = self.log_std_bounds
+        log_std_min, log_std_max = map(float, self.log_std_bounds)
         log_std = log_std_min + 0.5 * (log_std_max - log_std_min) * (log_std + 1)
 
-        std = log_std.exp()
+        std = log_std.exp().clamp(min=1e-6)
 
         self.outputs['mu'] = mu
         self.outputs['log_std'] = log_std
