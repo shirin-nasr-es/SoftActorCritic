@@ -1,34 +1,95 @@
-defaults:
-    - agent: sac
+"""
+This configuration defines all parameters for training the Soft Actor-Critic (SAC) agent in the UAV calibration environment.
+"""
+# ===== Experiment Info =====
+env: uav_calibrate             # Environment name
+experiment: sac_short_run      # Run identifier (used in output/log folder names)
 
-env: cheetah_run
+# ===== Hardware & Reproducibility =====
+device: cuda                   # Training device
+seed: 1                        # Random seed for reproducibility
 
-# this needs to be specified manually
-experiment: test_exp
-
-num_train_steps: 1e6
+# ===== Training Schedule =====
+num_train_steps: 20000         # Total gradient update steps
 replay_buffer_capacity: ${num_train_steps}
+num_seed_steps: 2000           # Steps before SAC updates begin
+eval_frequency: 2000           # How often to run evaluation episodes
+num_eval_episodes: 5           # Number of evaluation rollouts
 
-num_seed_steps: 5000
-
-eval_frequency: 10000
-num_eval_episodes: 10
-
-device: cuda
-
-# logger
-log_frequency: 10000
+# ===== Logging =====
+log_frequency: 500
 log_save_tb: true
+save_video: false
 
-# video recorder
-save_video: true
+# ===== Dataset Paths =====
+dataset:
+  images_path: "path/to/images"
+  csv_path: "path/to/csv_file"
+  resize_factor: 0.5
+  normalization: "none"
+  fail_sentinel_size: [128, 128]
 
+# ===== Camera Sensor Intrinsics =====
+sensor:
+  width_mm: 13.2
+  height_mm: 8.8
+  f_mm: 8.8
 
-seed: 1
+# ===== Environment Parameters =====
+mode: "rmse"
+ransac_thresh: 1.2
+fx_bound: [100.0, 3000.0]
+fy_bound: [100.0, 3000.0]
+episode_len: 30
+max_episode_steps: 30
+early_termination: true
+early_patience: 6
+early_thresh: 0.17
+pairs_per_step: 4
+failure_penalty: 50.0
+ema_beta: 0.8
+step_scale: 0.007
 
+# ===== SAC Agent Configuration =====
+agent:
+  name: sac
+  params:
+    obs_dim: null
+    action_dim: null
+    action_range: [-1.0, 1.0]
+    batch_size: 128
+    device: ${device}
+    discount: 0.99
+    init_temperature: 0.1
+    learnable_temperature: true
+    alpha_lr: 0.0003
+    alpha_betas: [0.9, 0.999]
+    actor_lr: 0.0003
+    actor_betas: [0.9, 0.999]
+    actor_update_frequency: 1
+    critic_lr: 0.0003
+    critic_betas: [0.9, 0.999]
+    critic_tau: 0.005
+    critic_target_update_frequency: 1
 
-# hydra configuration
+    critic_cfg:
+      _target_: agent.critic.DoubleQCritic
+      obs_dim: ${agent.params.obs_dim}
+      action_dim: ${agent.params.action_dim}
+      hidden_dim: 256
+      hidden_depth: 2
+
+    actor_cfg:
+      _target_: agent.actor.DiagGaussianActor
+      obs_dim: ${agent.params.obs_dim}
+      action_dim: ${agent.params.action_dim}
+      hidden_dim: 256
+      hidden_depth: 2
+      log_std_bounds: [-10, 2]
+
+# ===== Hydra Experiment Output Settings =====
 hydra:
-    name: ${env}
-    run:
-        dir: ./exp/${now:%Y.%m.%d}/${now:%H%M}_${agent.name}_${experiment}
+  name: ${env}
+  run:
+    dir: ./exp/${now:%Y.%m.%d}/${now:%H%M}_${agent.name}_${experiment}
+  output_subdir: ""
