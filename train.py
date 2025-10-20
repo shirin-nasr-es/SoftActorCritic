@@ -78,7 +78,10 @@ class Workspace(object):
         # runs evaluation episodes (no exploration), logs metrics/videos, and reports averaged return.
         avg_ep_ret = 0.0
         for ep in range(self.cfg.num_eval_episodes):
-            obs = self.env.reset()
+            # obs = self.env.reset()
+            reset_out = self.env.reset()
+            obs = reset_out[0] if isinstance(reset_out, tuple) else reset_out
+            
             self.agent.reset()
             self.video_recorder.init(enabled=(ep == 0))
             done = False
@@ -89,7 +92,16 @@ class Workspace(object):
                 with eval_mode(self.agent), torch.no_grad():
                     action = self.agent.act(obs, sample=False)
 
-                obs, reward, done, _ = self.env.step(action)
+                # obs, reward, done, _ = self.env.step(action)
+                
+                step_out = self.env.step(action)
+                if isinstance(step_out, tuple) and len(step_out) == 5:
+                    obs, reward, terminated, truncated, _ = step_out
+                    done = bool(terminated or truncated)
+                else:
+                    obs, reward, done, _ = step_out
+
+                
                 self.video_recorder.record(self.env)
                 ep_ret += float(reward)
 
@@ -120,7 +132,11 @@ class Workspace(object):
 
                 self.logger.log('train/episode_reward', episode_reward, self.step)
 
-                obs = self.env.reset()
+                # obs = self.env.reset()
+                
+                reset_out = self.env.reset()
+                obs = reset_out[0] if isinstance(reset_out, tuple) else reset_out
+                
                 self.agent.reset()
                 done = False
                 episode_reward = 0.0
@@ -136,7 +152,14 @@ class Workspace(object):
                 with eval_mode(self.agent), torch.no_grad():
                     action = self.agent.act(obs, sample=True)
 
-            next_obs, reward, done, _ = self.env.step(action)
+            # next_obs, reward, done, _ = self.env.step(action)
+
+            step_out = self.env.step(action) 
+            if isinstance(step_out, tuple) and len(step_out) == 5:
+                next_obs, reward, terminated, truncated, _ = step_out
+                done = bool(terminated or truncated)
+            else:
+                next_obs, reward, done, _ = step_out
 
             # convert to float (for buffer conventions)
             done_float = float(done)
