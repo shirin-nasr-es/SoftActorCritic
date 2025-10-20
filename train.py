@@ -1,106 +1,110 @@
-#!/usr/bin/env python3
+"""Entry point for training: builds env/agent/logger/buffer from Hydra config and runs SAC training & evaluation loops."""
+
 import os
-import sys
-import copy
-import math
 import time
 import numpy as np
-from cgitb import enable
-
-if not hasattr(np, "int"):
-    np.int = int
-# (Optional, in case other aliases pop up later)
-# if not hasattr(np, "float"): np.float = float
-# if not hasattr(np, "bool"):  np.bool  = bool
-
-
-import gymnasium as gym
-import utils
-import hydra
-import dmc2gym
-
-
-import pickle as pkl
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+import hydra
 
 from logger import Logger
-from video import VideoRecorder
 from replay_buffer import ReplayBuffer
+from video import VideoRecorder
 
+from utils import make_env, set_seed_everywhere, eval_mode
+from agent.sac import SACAgent
 
-# Creates and returns a DeepMind Control Suite environment (via dmc2gym),
-# configured by the given task name and seed, with normalized action space [-1, 1].
-def make_env(cfg):
-    if cfg.env == 'ball_in_cup_catch':
-        domain_name = 'ball_in_cup'
-        task_name = 'catch'
-    else:
-        domain_name = cfg.env.split('_')[0]
-        task_name = '_'.join(cfg.env.split('_')[1:])
-
-    env = dmc2gym.make(domain_name=domain_name, task_name=task_name, seed=cfg.seed, visualize_reward=True)
-    env.seed(cfg.seed)
-    assert env.action_space.low.min()>= -1
-    assert env.action_space.high.max()<= 1
-
-    return env
 
 class Workspace(object):
+    # orchestrates setup (device, env, agent, logger, buffer) and manages the full train/eval lifecycle.
     def __init__(self, cfg):
         self.work_dir = os.getcwd()
         print(f'workspace: {self.work_dir}')
 
         self.cfg = cfg
+        if isinstance(cfg.device, str):
+            self.device = torch.device(cfg.device)
+        else:
+            # fallback if cfg.device is missing/None
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        self.logger = Logger(self.work_dir, save_tb=cfg.log_save_tb, log_frequency=cfg.log_frequency, agent=cfg.agent.name)
+        # (optional) CUDA speed knobs
+        if self.device.type == 'cuda':
+            torch.backends.cudnn.benchmark = True
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            try:
+                torch.set_float32_matmul_precision("high")
+            except Exception:
+                pass
 
-        utils.set_seed_everywhere(cfg.seed)
-        self.device = torch.device(cfg.device)
-        self.env = utils.make_env(cfg)
+        # 2) LOGGER
+        self.logger = Logger(
+            self.work_dir,
+            save_tb=cfg.log_save_tb,
+            log_frequency=cfg.log_frequency,
+            agent=cfg.agent.name
+        )
 
-        cfg.agent.params.obs_dim = self.env.observation_space.shape[0]
-        cfg.agent.params.action_dim = self.env.action_space.shape[0]
+        # 3) SEED, ENV, AGENT, etc.
+        set_seed_everywhere(cfg.seed)
+
+        # make env
+        self.env = make_env(cfg)
+
+        # fill agent dims
+        cfg.agent.params.obs_dim    = int(np.prod(self.env.observation_space.shape))
+        cfg.agent.params.action_dim = int(np.prod(self.env.action_space.shape))
         cfg.agent.params.action_range = [
             float(self.env.action_space.low.min()),
             float(self.env.action_space.high.max())
         ]
-        self.agent = hydra.utils.instantiate(cfg.agent)
 
-        self.replay_buffer = ReplayBuffer(self.env.observation_space.shape,
-                                          self.env.action_space.shape,
-                                          int(cfg.replay_buffer_capacity),
-                                          self.device)
+        # build agent
+        self.agent = SACAgent(**cfg.agent.params)
 
-        self.video_recorder = VideoRecorder(
-            self.work_dir if cfg.save_video else None)
+        # replay buffer
+        self.replay_buffer = ReplayBuffer(
+            self.env.observation_space.shape,
+            self.env.action_space.shape,
+            int(cfg.replay_buffer_capacity),
+            self.device
+        )
+
+        self.video_recorder = VideoRecorder(self.work_dir if cfg.save_video else None)
         self.step = 0
 
     def evaluate(self):
-        average_episode_reward = 0
-        for episode in range(self.cfg.num_eval_episodes):
+        # runs evaluation episodes (no exploration), logs metrics/videos, and reports averaged return.
+        avg_ep_ret = 0.0
+        for ep in range(self.cfg.num_eval_episodes):
             obs = self.env.reset()
             self.agent.reset()
-            self.video_recorder.init(enabled=(episode == 0))
+            self.video_recorder.init(enabled=(ep == 0))
             done = False
-            episode_reward = 0
+            ep_ret = 0.0
+
             while not done:
-                with utils.eval_mode(self.agent):
+                # with utils.eval_mode(self.agent):
+                with eval_mode(self.agent), torch.no_grad():
                     action = self.agent.act(obs, sample=False)
+
                 obs, reward, done, _ = self.env.step(action)
                 self.video_recorder.record(self.env)
-                episode_reward += reward
+                ep_ret += float(reward)
 
-            average_episode_reward += episode_reward
-            self.video_recorder.save(f'{self.step}.mp4')
-        average_episode_reward /= self.cfg.num_eval_episodes
-        self.logger.log('eval/episode_reward', average_episode_reward, self.step)
+            self.logger.log('eval/episode_reward_single', ep_ret, self.step)
+
+            avg_ep_ret += ep_ret
+            self.video_recorder.save(f'eval_step{self.step}_ep{ep}.mp4')
+
+        avg_ep_ret /= max(1, self.cfg.num_eval_episodes)
+        self.logger.log('eval/episode_reward', avg_ep_ret, self.step)
         self.logger.dump(self.step)
 
     def run(self):
-        episode, episode_reward, done = 0, 0, True
+        # main training loop: collects experience, updates SAC after seed steps, and periodically evaluates/logs.
+        episode, episode_reward, done = 0, 0.0, True
         start_time = time.time()
         while self.step < self.cfg.num_train_steps:
             if done:
@@ -119,49 +123,45 @@ class Workspace(object):
                 obs = self.env.reset()
                 self.agent.reset()
                 done = False
-                episode_reward = 0
+                episode_reward = 0.0
                 episode_step = 0
                 episode += 1
 
                 self.logger.log('train/episode', episode, self.step)
 
-            # sample action for data collection
+            # exploration vs policy action
             if self.step < self.cfg.num_seed_steps:
                 action = self.env.action_space.sample()
             else:
-                with utils.eval_mode(self.agent):
+                with eval_mode(self.agent), torch.no_grad():
                     action = self.agent.act(obs, sample=True)
-
-            # run training update
-            if self.step >= self.cfg.num_seed_steps:
-                self.agent.update(self.replay_buffer, self.logger, self.step)
 
             next_obs, reward, done, _ = self.env.step(action)
 
-            # allow infinite bootstrap
-            done = float(done)
-
-
-
-            # done_no_max = 0 if episode_step + 1 == self.env._max_episode_steps else done
+            # convert to float (for buffer conventions)
+            done_float = float(done)
             spec = getattr(self.env, "spec", None)
             max_steps = getattr(spec, "max_episode_steps", None)
-            done_no_max = 0 if (max_steps is not None and episode_step + 1 == max_steps) else done
+            done_no_max = 0.0 if (max_steps is not None and episode_step + 1 == max_steps) else done_float
 
+            episode_reward += float(reward)
 
-            episode_reward += reward
+            self.replay_buffer.add(obs, action, float(reward), next_obs, done_float, done_no_max)
 
-            self.replay_buffer.add(obs, action, reward, next_obs, done, done_no_max)
+            if self.step >= self.cfg.num_seed_steps:
+                self.agent.update(self.replay_buffer, self.logger, self.step)
 
             obs = next_obs
             episode_step += 1
             self.step += 1
 
-@hydra.main(config_path='config/train.yaml', strict=True)
+@hydra.main(config_path="config/train.yaml")
 def main(cfg):
+    # Hydra entry point: creates a Workspace and launches training
     workspace = Workspace(cfg)
     workspace.run()
 
 if __name__ == '__main__':
     main()
+
 
