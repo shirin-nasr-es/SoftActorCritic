@@ -1,19 +1,21 @@
 import abc
 
 
-class Agent(object):
+class Agent(abc.ABC):
+    # abstract base class defining the core interface for all reinforcement learning agents.
+
     def reset(self):
-        """For state-full agents this function performs resetting at the beginning of each episode."""
+        # reset any internal states at the start of an episode (for stateful agents).
         pass
 
     @abc.abstractmethod
-    def train(self, training=True):
-        """Sets the agent in either training or evaluation mode."""
+    def train(self, training: bool = True):
+        """switch the agent between training and evaluation modes."""
 
     @abc.abstractmethod
-    def update(self, replay_buffer, logger, step):
-        """Main function of the agent that performs learning."""
+    def update(self, replay_buffer, logger, step: int):
+        """perform one learning update using experience from the replay buffer."""
 
     @abc.abstractmethod
-    def act(self, obs, sample=False):
-        """Issues an action given an observation."""
+    def act(self, obs, sample: bool = False):
+        """select an action given the current observation."""
