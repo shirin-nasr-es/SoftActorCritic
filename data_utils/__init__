@@ -22,8 +22,8 @@ Modules
     * Script to plot per-episode returns and a moving average, auto-selecting
       the most improving training segment (for reports/figures).
 
-- airpai_latlon_estimator
-    * Script that estimates a 2D UAV trajectory from consecutive AIRPAI images
+- latlon_estimator
+    * Script that estimates a 2D UAV trajectory from consecutive UAV images
       via SIFT + homography decomposition, aligns it to GPS (lat/lon), and plots GT vs estimate.
 """
 
