@@ -7,15 +7,15 @@ Modules
 -------
 - data_loader
     * UAVDataset: loads UAV grayscale images + metadata from CSV, with optional
-      resizing/normalization; returns (1×H×W) tensors and coordinates.
+      resizing/normalization; returns (1xHxW) tensors and coordinates.
 
 - Intrinsic_matrix
     * get_intrinsic_matrix(scale_factor, image_width, image_height, fx, fy):
       builds a 3×3 intrinsic matrix (fx, fy, cx, cy) adjusted for image scaling.
 
 - reprojection_error
-    * Camera: minimal pinhole camera (K, R, t) with 3D→2D projection.
-    * compute_reprojection_error: total ½‖r‖² cost across observations.
+    * Camera: minimal pinhole camera (K, R, t) with 3D->2D projection.
+    * compute_reprojection_error: 0.5 * sum of squared reprojection residuals across all observations.
     * reprojection_rmse: reprojection error RMSE (pixels).
 
 - episode_return_like_sample
