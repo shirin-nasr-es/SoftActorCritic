@@ -50,6 +50,10 @@ failure_penalty: 50.0
 ema_beta: 0.8
 step_scale: 0.007
 
+# ===== Geometry Settings =====
+geom_model: "H"      # "H" = Homography model, "E" = Essential matrix model
+ransac_thresh: 1.2   # RANSAC pixel threshold (controls inlier tolerance)
+
 # ===== SAC Agent Configuration =====
 agent:
   name: sac
