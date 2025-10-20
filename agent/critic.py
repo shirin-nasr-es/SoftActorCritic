@@ -1,12 +1,13 @@
 import utils
 import torch
-import numpy as np
-import torch.nn.functional as F
-
 from torch import nn
 
+"""
+This module defines the critic network using twin Q-functions for stable value estimation in Soft Actor-Critic.
+"""
+
 class DoubleQCritic(nn.Module):
-    """ Critic network that employs double Q-Learning. """
+    # computes two independent Q-values (Q1, Q2) from (obs, action) to reduce overestimation.
     def __init__(self, obs_dim, action_dim, hidden_dim, hidden_depth):
         super().__init__()
         self.Q1 = utils.mlp(obs_dim + action_dim, hidden_dim, 1, hidden_depth)
@@ -16,9 +17,17 @@ class DoubleQCritic(nn.Module):
         self.apply(utils.weight_init)
 
     def forward(self, obs, action):
+        # return (Q1, Q2) for the given observation and action.
+        obs = obs.float()
+        action = action.float()
+
+        if obs.ndim == 1: obs = obs.unsqueeze(0)
+        if action.ndim == 1: action = action.unsqueeze(0)
+
         assert obs.size(0) == action.size(0)
 
-        obs_action = torch.cat([obs, action], dim=-1)
+        obs_action = torch.cat([obs, action], dim=-1).contiguous()
+
         q1 = self.Q1(obs_action)
         q2 = self.Q2(obs_action)
 
