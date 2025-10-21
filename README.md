@@ -3,7 +3,7 @@
 This repository provides the implementation of a Soft Actor-Critic (SAC) framework for **self-calibration of UAV camera intrinsics** using only visual information.  
 The learning process relies on minimizing reprojection error from image pairs and does **not** use any labeled data or metadata during training.
 
-Dataset Description:
+** Dataset Description: **
 This work used  two UAV datasets — AU-AIR[1] and AIRPAI[2] - to evaluate the proposed self-calibration framework under varying visual and texture conditions.
 The AIRPAI[2] dataset includes Building and Grass subsets with high-resolution UAV images captured from diverse viewpoints, 
 while the AU-AIR[1] dataset contributes additional evaluation data by using one frame out of every five from its first video sequence to test generalization.
