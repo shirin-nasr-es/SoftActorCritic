@@ -1,3 +1,7 @@
+# Main training script for the Soft Actor-Critic (SAC) framework.
+# This file runs the end-to-end self-calibration of UAV camera intrinsics 
+# using visual reprojection error without ground-truth metadata.
+
 import os
 import csv
 import json
