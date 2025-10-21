@@ -8,3 +8,6 @@ This work used two UAV datasets — [AU-AIR](https://arxiv.org/abs/2001.11737) [
 The AIRPAI dataset includes *building* and *grass* subsets with high-resolution UAV images captured from diverse viewpoints, while the AU-AIR dataset contributes additional evaluation data by using one frame out of every five from its first video sequence to test generalization.  
 All associated metadata (camera intrinsics, GPS, and IMU information) is employed **only for evaluation and comparison**, not for training or reward computation.  
 The SAC agent learns camera intrinsics purely from **visual reprojection error** between image pairs, without using any ground-truth parameters.
+
+**Data Access:**
+All data used for this work are shared [here](https://drive.google.com/drive/folders/1YmYroIzXu0mSyFk7hFsi238S2I22Nibd?usp=drive_link).
